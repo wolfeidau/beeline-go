@@ -8,6 +8,7 @@ import (
 
 	"github.com/honeycombio/beeline-go"
 	"github.com/honeycombio/beeline-go/internal"
+	"github.com/honeycombio/beeline-go/timer"
 	"github.com/honeycombio/libhoney-go"
 )
 
@@ -93,5 +94,40 @@ func WrapHandlerFunc(hf func(http.ResponseWriter, *http.Request)) func(http.Resp
 		ev.AddField("response.status_code", wrappedWriter.Status)
 		ev.AddField("duration_ms", float64(time.Since(start))/float64(time.Millisecond))
 		ev.Send()
+	}
+}
+
+type hnyTripper struct {
+	// wrt is the wrapped round tripper
+	wrt http.RoundTripper
+}
+
+func (ht *hnyTripper) RoundTrip(r *http.Request) (*http.Response, error) {
+	tm := timer.Start()
+	ev := libhoney.NewEvent()
+	defer ev.Send()
+
+	internal.AddRequestProps(r, ev)
+	// override things from AddRequestProps
+	ev.AddField("meta.type", "http_client")
+	internal.AddTraceID(r.Context(), ev)
+
+	resp, err := ht.wrt.RoundTrip(r)
+
+	if err != nil {
+		ev.AddField("error", err)
+	}
+	dur := tm.Finish()
+	ev.AddField("duration_ms", dur)
+	return resp, err
+}
+
+// WrapRoundTripper wraps an http transport for outgoing HTTP calls. Using a
+// wrapped transport will send an event to Honeycomb for each outbound HTTP call
+// you make. Include a context with outbound requests when possible to enable
+// correlation
+func WrapRoundTripper(r http.RoundTripper) http.RoundTripper {
+	return &hnyTripper{
+		wrt: r,
 	}
 }

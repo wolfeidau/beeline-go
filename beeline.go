@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/google/uuid"
 	libhoney "github.com/honeycombio/libhoney-go"
 )
 
@@ -147,6 +148,30 @@ func ContextEvent(ctx context.Context) *libhoney.Event {
 		}
 	}
 	return nil
+}
+
+// NewEvent will hand you a new event to do with as you please. This is useful
+// for larger services when you want to represent significant portions of work
+// within a service.
+//
+// Make sure you `Send()` this event (calling it in a defer immediately after
+// creating is often a good choice).
+func NewEvent(ctx context.Context) context.Context {
+	ev := libhoney.NewEvent()
+	ev.AddField("meta.type", "app")
+	if parentEv := ContextEvent(ctx); parentEv != nil {
+		if id, ok := parentEv.Fields()["trace.trace_id"]; ok {
+			ev.AddField("trace.trace_id", id)
+		}
+		if id, ok := parentEv.Fields()["trace.span_id"]; ok {
+			ev.AddField("trace.parent_id", id)
+		}
+		id, _ := uuid.NewRandom()
+		ev.AddField("trace.span_id", id.String())
+	}
+
+	ctx = ContextWithEvent(ctx, ev)
+	return ctx
 }
 
 // contextBuilder isn't used yet but matches ContextEvent. When it's useful,

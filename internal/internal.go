@@ -25,7 +25,7 @@ func (h *ResponseWriter) WriteHeader(statusCode int) {
 
 func AddRequestProps(req *http.Request, ev *libhoney.Event) {
 	// identify the type of event
-	ev.AddField("meta.type", "http")
+	ev.AddField("meta.type", "http_server")
 	// Add a variety of details about the HTTP request, such as user agent
 	// and method, to any created libhoney event.
 	ev.AddField("request.method", req.Method)
@@ -91,10 +91,10 @@ func parseTraceHeader(req *http.Request, ev *libhoney.Event) string {
 // function which, when called, dispatches the event that it created. This lets
 // it finish a timer around the call automatically.
 func BuildDBEvent(ctx context.Context, bld *libhoney.Builder, query string, args ...interface{}) (*libhoney.Event, func(error)) {
-	timer := timer.Start()
+	tm := timer.Start()
 	ev := bld.NewEvent()
 	fn := func(err error) {
-		duration := timer.Finish()
+		duration := tm.Finish()
 		rollup(ctx, ev, duration)
 		ev.AddField("duration_ms", duration)
 		if err != nil {
@@ -103,7 +103,7 @@ func BuildDBEvent(ctx context.Context, bld *libhoney.Builder, query string, args
 		ev.Metadata, _ = ev.Fields()["name"]
 		ev.Send()
 	}
-	addTraceID(ctx, ev)
+	AddTraceID(ctx, ev)
 
 	// get the name of the function that called this one. Strip the package and type
 	pc, _, _, _ := runtime.Caller(1)
@@ -179,7 +179,7 @@ func rollup(ctx context.Context, ev *libhoney.Event, dur float64) {
 	}
 }
 
-func addTraceID(ctx context.Context, ev *libhoney.Event) {
+func AddTraceID(ctx context.Context, ev *libhoney.Event) {
 	// get a transaction ID from the request's event, if it's sitting in context
 	if parentEv := beeline.ContextEvent(ctx); parentEv != nil {
 		if id, ok := parentEv.Fields()["trace.trace_id"]; ok {
